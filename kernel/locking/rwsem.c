@@ -31,6 +31,39 @@
 #include "rwsem.h"
 #include "lock_events.h"
 
+#define MAX_POLICY 5
+void *bpf_prog_lock_to_acquire_read[MAX_POLICY];
+void *bpf_prog_lock_acquired_read[MAX_POLICY];
+void *bpf_prog_lock_to_release_read[MAX_POLICY];
+void *bpf_prog_lock_released_read[MAX_POLICY];
+
+void *bpf_prog_lock_to_acquire_write[MAX_POLICY];
+void *bpf_prog_lock_acquired_write[MAX_POLICY];
+void *bpf_prog_lock_to_release_write[MAX_POLICY];
+void *bpf_prog_lock_released_write[MAX_POLICY];
+
+void *bpf_prog_lock_bypass_acquire_read[MAX_POLICY];
+void *bpf_prog_lock_bypass_release_read[MAX_POLICY];
+
+void *bpf_prog_lock_bypass_acquire_write[MAX_POLICY];
+void *bpf_prog_lock_bypass_release_write[MAX_POLICY];
+
+EXPORT_SYMBOL(bpf_prog_lock_to_acquire_read);
+EXPORT_SYMBOL(bpf_prog_lock_acquired_read);
+EXPORT_SYMBOL(bpf_prog_lock_to_release_read);
+EXPORT_SYMBOL(bpf_prog_lock_released_read);
+
+EXPORT_SYMBOL(bpf_prog_lock_to_acquire_write);
+EXPORT_SYMBOL(bpf_prog_lock_acquired_write);
+EXPORT_SYMBOL(bpf_prog_lock_to_release_write);
+EXPORT_SYMBOL(bpf_prog_lock_released_write);
+
+EXPORT_SYMBOL(bpf_prog_lock_bypass_acquire_read);
+EXPORT_SYMBOL(bpf_prog_lock_bypass_release_read);
+
+EXPORT_SYMBOL(bpf_prog_lock_bypass_acquire_write);
+EXPORT_SYMBOL(bpf_prog_lock_bypass_release_write);
+
 /*
  * The least significant 3 bits of the owner value has the following
  * meanings when set.

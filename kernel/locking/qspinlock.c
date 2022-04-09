@@ -291,6 +291,7 @@ static __always_inline u32  __pv_wait_head_or_lock(struct qspinlock *lock,
 #endif /* _GEN_PV_LOCK_SLOWPATH */
 
 #define MAX_POLICY 5
+int num_policy = 0;
 void *bpf_prog_lock_to_acquire[MAX_POLICY];
 void *bpf_prog_lock_acquired[MAX_POLICY];
 void *bpf_prog_lock_to_release[MAX_POLICY];
@@ -302,6 +303,7 @@ void *bpf_prog_lock_enable_fastpath[MAX_POLICY];
 void *bpf_prog_lock_bypass_acquire[MAX_POLICY];
 void *bpf_prog_lock_bypass_release[MAX_POLICY];
 
+EXPORT_SYMBOL(num_policy);
 EXPORT_SYMBOL(bpf_prog_lock_to_acquire);
 EXPORT_SYMBOL(bpf_prog_lock_acquired);
 EXPORT_SYMBOL(bpf_prog_lock_to_release);
