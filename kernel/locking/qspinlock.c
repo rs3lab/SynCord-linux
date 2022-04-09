@@ -319,11 +319,11 @@ void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
 
 	BUILD_BUG_ON(CONFIG_NR_CPUS >= (1U << _Q_TAIL_CPU_BITS));
 
-	if (pv_enabled())
-		goto pv_queue;
+	/* if (pv_enabled()) */
+	/* 	goto pv_queue; */
 
-	if (virt_spin_lock(lock))
-		return;
+	/* if (virt_spin_lock(lock)) */
+	/* 	return; */
 
 	/*
 	 * Wait for in-progress pending->locked hand-overs with a bounded

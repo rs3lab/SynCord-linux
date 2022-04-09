@@ -211,6 +211,7 @@ enum bpf_arg_type {
 	ARG_PTR_TO_INT,		/* pointer to int */
 	ARG_PTR_TO_LONG,	/* pointer to long */
 	ARG_PTR_TO_SOCKET,	/* pointer to bpf_sock (fullsock) */
+	ARG_PTR_TO_QSPINLOCK,	/* pointer to qspinlock */
 };
 
 /* type of values returned from helper functions */
@@ -281,6 +282,7 @@ enum bpf_reg_type {
 	PTR_TO_TCP_SOCK_OR_NULL, /* reg points to struct tcp_sock or NULL */
 	PTR_TO_TP_BUFFER,	 /* reg points to a writable raw tp's buffer */
 	PTR_TO_XDP_SOCK,	 /* reg points to struct xdp_sock */
+	PTR_TO_QSPINLOCK,	 /* reg points to struct qspinlock */
 };
 
 /* The information passed from prog-specific *_is_valid_access
@@ -1025,6 +1027,7 @@ static inline int bpf_fd_reuseport_array_update_elem(struct bpf_map *map,
 #endif /* defined(CONFIG_INET) && defined(CONFIG_BPF_SYSCALL) */
 
 /* verifier prototypes for helper functions called from eBPF programs */
+extern const struct bpf_func_proto bpf_back_off_proto;
 extern const struct bpf_func_proto bpf_map_lookup_elem_proto;
 extern const struct bpf_func_proto bpf_map_update_elem_proto;
 extern const struct bpf_func_proto bpf_map_delete_elem_proto;
@@ -1055,6 +1058,11 @@ extern const struct bpf_func_proto bpf_get_local_storage_proto;
 extern const struct bpf_func_proto bpf_strtol_proto;
 extern const struct bpf_func_proto bpf_strtoul_proto;
 extern const struct bpf_func_proto bpf_tcp_sock_proto;
+
+extern const struct bpf_func_proto bpf_perf_event_output_proto;
+extern const struct bpf_func_proto bpf_get_current_task_proto;
+extern const struct bpf_func_proto bpf_probe_read_proto;
+extern const struct bpf_func_proto bpf_probe_write_user_proto;
 
 /* Shared helpers among cBPF and eBPF. */
 void bpf_user_rnd_init_once(void);

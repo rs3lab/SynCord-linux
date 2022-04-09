@@ -23,6 +23,34 @@
  * if program is allowed to access maps, so check rcu_read_lock_held in
  * all three functions.
  */
+
+BPF_CALL_2(bpf_back_off, u64, lock, u64, timeout)
+{
+	unsigned long enter_time = ktime_get_mono_fast_ns();
+	unsigned long counter = 0, time_to_check = 1;
+	struct qspinlock *l = (struct qspinlock*)lock;
+
+	do {
+		if(++counter == time_to_check) {
+			if(atomic_read_acquire(&l->val) == 0)
+				return 1;
+			time_to_check *= 2;
+		}
+		cpu_relax();
+	} while (ktime_get_mono_fast_ns() - enter_time < timeout);
+
+	return 0;
+}
+
+const struct bpf_func_proto bpf_back_off_proto = {
+	.func		= bpf_back_off,
+	.gpl_only	= false,
+	.pkt_access	= true,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_ANYTHING,
+	.arg2_type	= ARG_ANYTHING,
+};
+
 BPF_CALL_2(bpf_map_lookup_elem, struct bpf_map *, map, void *, key)
 {
 	WARN_ON_ONCE(!rcu_read_lock_held());

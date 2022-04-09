@@ -5995,6 +5995,7 @@ static bool may_access_skb(enum bpf_prog_type type)
 	case BPF_PROG_TYPE_SOCKET_FILTER:
 	case BPF_PROG_TYPE_SCHED_CLS:
 	case BPF_PROG_TYPE_SCHED_ACT:
+	case BPF_PROG_TYPE_LOCK_POLICY:
 		return true;
 	default:
 		return false;
@@ -7865,7 +7866,8 @@ static int check_map_prog_compatibility(struct bpf_verifier_env *env,
 	}
 
 	if ((is_tracing_prog_type(prog->type) ||
-	     prog->type == BPF_PROG_TYPE_SOCKET_FILTER) &&
+	     prog->type == BPF_PROG_TYPE_SOCKET_FILTER ||
+		 prog->type == BPF_PROG_TYPE_LOCK_POLICY) &&
 	    map_value_has_spin_lock(map)) {
 		verbose(env, "tracing progs cannot use bpf_spin_lock yet\n");
 		return -EINVAL;
