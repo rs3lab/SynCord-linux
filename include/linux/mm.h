@@ -971,7 +971,7 @@ void __put_devmap_managed_page(struct page *page);
 DECLARE_STATIC_KEY_FALSE(devmap_managed_key);
 static inline bool put_devmap_managed_page(struct page *page)
 {
-	if (!static_branch_unlikely(&devmap_managed_key))
+	if (!unlikely(static_key_enabled(&devmap_managed_key)))
 		return false;
 	if (!is_zone_device_page(page))
 		return false;

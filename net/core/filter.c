@@ -74,6 +74,8 @@
 #include <net/ipv6_stubs.h>
 #include <net/bpf_sk_storage.h>
 
+#include <linux/lock_policy.h>
+
 /**
  *	sk_filter_trim_cap - run a packet through a socket filter
  *	@sk: sock associated with &sk_buff
@@ -5966,6 +5968,8 @@ static const struct bpf_func_proto *
 bpf_base_func_proto(enum bpf_func_id func_id)
 {
 	switch (func_id) {
+	case BPF_FUNC_back_off:
+		return &bpf_back_off_proto;
 	case BPF_FUNC_map_lookup_elem:
 		return &bpf_map_lookup_elem_proto;
 	case BPF_FUNC_map_update_elem:
@@ -6077,6 +6081,27 @@ sk_filter_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 		return &bpf_get_socket_uid_proto;
 	case BPF_FUNC_perf_event_output:
 		return &bpf_skb_event_output_proto;
+	default:
+		return bpf_base_func_proto(func_id);
+	}
+}
+
+static const struct bpf_func_proto *
+lock_policy_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+{
+	switch (func_id) {
+	case BPF_FUNC_get_current_pid_tgid:
+		return &bpf_get_current_pid_tgid_proto;
+	case BPF_FUNC_get_stackid:
+		return &bpf_get_stackid_proto;
+	case BPF_FUNC_get_current_comm:
+		return &bpf_get_current_comm_proto;
+	case BPF_FUNC_perf_event_output:
+		return &bpf_perf_event_output_proto;
+	case BPF_FUNC_probe_read:
+		return &bpf_probe_read_proto;
+	case BPF_FUNC_probe_write_user:
+		return &bpf_probe_write_user_proto;
 	default:
 		return bpf_base_func_proto(func_id);
 	}
@@ -6551,6 +6576,15 @@ static bool sk_filter_is_valid_access(int off, int size,
 	}
 
 	return bpf_skb_is_valid_access(off, size, type, prog, info);
+}
+
+static bool lock_policy_is_valid_access(int off, int size,
+				   enum bpf_access_type type,
+				   const struct bpf_prog *prog,
+				   struct bpf_insn_access_aux *info)
+{
+	/** return bpf_skb_is_valid_access(off, size, type, prog, info); */
+	return true;
 }
 
 static bool cg_skb_is_valid_access(int off, int size,
@@ -7762,6 +7796,76 @@ static u32 tc_cls_act_convert_ctx_access(enum bpf_access_type type,
 	return insn - insn_buf;
 }
 
+static u32 lock_policy_ctx_access(enum bpf_access_type type,
+				  const struct bpf_insn *si,
+				  struct bpf_insn *insn_buf,
+				  struct bpf_prog *prog, u32 *target_size)
+{
+	struct bpf_insn *insn = insn_buf;
+	int off = 0;
+
+	switch (si->off){
+
+#ifdef DEFINE_PER_CPU_DATA
+	case offsetof(struct __lock_policy_args, per_cpu_data):
+		// TODO: Let per-cpu-data as an array, need to modify off.
+
+		if (type == BPF_WRITE){
+			// nested store
+
+			int tmp_reg = BPF_REG_9;
+			if (si->src_reg == tmp_reg || si->dst_reg == tmp_reg)
+				--tmp_reg;
+			if (si->src_reg == tmp_reg || si->dst_reg == tmp_reg)
+				--tmp_reg;
+
+			*insn++ = BPF_STX_MEM(BPF_DW, si->dst_reg, tmp_reg,
+				offsetof(struct lock_policy_args, tmp_reg));
+
+			*insn++ = BPF_LDX_MEM(
+				BPF_FIELD_SIZEOF(struct lock_policy_args, per_cpu_data),
+				tmp_reg, si->dst_reg,
+				offsetof(struct lock_policy_args, per_cpu_data));
+
+			*insn++ = BPF_STX_MEM(
+				BPF_FIELD_SIZEOF(struct __lock_policy_args, per_cpu_data),
+				tmp_reg, si->src_reg,
+				off);
+
+			*insn++ = BPF_LDX_MEM(BPF_DW, tmp_reg, si->dst_reg,
+				offsetof(struct lock_policy_args, tmp_reg));
+
+		}
+		else{
+			*insn++ = BPF_LDX_MEM(
+				BPF_FIELD_SIZEOF(struct lock_policy_args, per_cpu_data),
+				si->dst_reg, si->src_reg,
+				offsetof(struct lock_policy_args, per_cpu_data));
+
+			*insn++ = BPF_LDX_MEM(
+				BPF_FIELD_SIZEOF(struct __lock_policy_args, per_cpu_data),
+				si->dst_reg, si->dst_reg,
+				off);
+		}
+
+		break;
+#endif
+
+	default:
+		if (type == BPF_WRITE)
+			*insn++ = BPF_STX_MEM(BPF_SIZEOF(unsigned long),
+						  si->dst_reg, si->src_reg,
+						  si->off);
+		else
+			*insn++ = BPF_LDX_MEM(BPF_SIZEOF(unsigned long),
+						  si->dst_reg, si->src_reg,
+						  si->off);
+		break;
+	}
+
+	return insn - insn_buf;
+}
+
 static u32 xdp_convert_ctx_access(enum bpf_access_type type,
 				  const struct bpf_insn *si,
 				  struct bpf_insn *insn_buf,
@@ -8473,6 +8577,15 @@ const struct bpf_verifier_ops sk_filter_verifier_ops = {
 
 const struct bpf_prog_ops sk_filter_prog_ops = {
 	.test_run		= bpf_prog_test_run_skb,
+};
+
+const struct bpf_verifier_ops lock_policy_verifier_ops = {
+	.get_func_proto		= lock_policy_func_proto,
+	.is_valid_access	= lock_policy_is_valid_access,
+	.convert_ctx_access = lock_policy_ctx_access,
+};
+
+const struct bpf_prog_ops lock_policy_prog_ops = {
 };
 
 const struct bpf_verifier_ops tc_cls_act_verifier_ops = {

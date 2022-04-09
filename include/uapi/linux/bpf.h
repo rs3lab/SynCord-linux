@@ -173,6 +173,7 @@ enum bpf_prog_type {
 	BPF_PROG_TYPE_CGROUP_SYSCTL,
 	BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE,
 	BPF_PROG_TYPE_CGROUP_SOCKOPT,
+	BPF_PROG_TYPE_LOCK_POLICY,
 };
 
 enum bpf_attach_type {
@@ -2753,6 +2754,7 @@ union bpf_attr {
  */
 #define __BPF_FUNC_MAPPER(FN)		\
 	FN(unspec),			\
+	FN(back_off),		\
 	FN(map_lookup_elem),		\
 	FN(map_update_elem),		\
 	FN(map_delete_elem),		\

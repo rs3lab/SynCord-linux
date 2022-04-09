@@ -1663,6 +1663,7 @@ static int bpf_prog_load(union bpf_attr *attr, union bpf_attr __user *uattr)
 		return -E2BIG;
 	if (type != BPF_PROG_TYPE_SOCKET_FILTER &&
 	    type != BPF_PROG_TYPE_CGROUP_SKB &&
+		type != BPF_PROG_TYPE_LOCK_POLICY &&
 	    !capable(CAP_SYS_ADMIN))
 		return -EPERM;
 

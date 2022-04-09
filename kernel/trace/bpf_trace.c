@@ -154,7 +154,7 @@ out:
 	return ret;
 }
 
-static const struct bpf_func_proto bpf_probe_read_proto = {
+const struct bpf_func_proto bpf_probe_read_proto = {
 	.func		= bpf_probe_read,
 	.gpl_only	= true,
 	.ret_type	= RET_INTEGER,
@@ -192,7 +192,7 @@ BPF_CALL_3(bpf_probe_write_user, void *, unsafe_ptr, const void *, src,
 	return probe_kernel_write(unsafe_ptr, src, size);
 }
 
-static const struct bpf_func_proto bpf_probe_write_user_proto = {
+const struct bpf_func_proto bpf_probe_write_user_proto = {
 	.func		= bpf_probe_write_user,
 	.gpl_only	= true,
 	.ret_type	= RET_INTEGER,
@@ -494,7 +494,7 @@ out:
 	return err;
 }
 
-static const struct bpf_func_proto bpf_perf_event_output_proto = {
+const struct bpf_func_proto bpf_perf_event_output_proto = {
 	.func		= bpf_perf_event_output,
 	.gpl_only	= true,
 	.ret_type	= RET_INTEGER,
@@ -556,7 +556,7 @@ BPF_CALL_0(bpf_get_current_task)
 	return (long) current;
 }
 
-static const struct bpf_func_proto bpf_get_current_task_proto = {
+const struct bpf_func_proto bpf_get_current_task_proto = {
 	.func		= bpf_get_current_task,
 	.gpl_only	= true,
 	.ret_type	= RET_INTEGER,
@@ -687,6 +687,8 @@ static const struct bpf_func_proto *
 tracing_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 {
 	switch (func_id) {
+	case BPF_FUNC_back_off:
+		return &bpf_back_off_proto;
 	case BPF_FUNC_map_lookup_elem:
 		return &bpf_map_lookup_elem_proto;
 	case BPF_FUNC_map_update_elem:
