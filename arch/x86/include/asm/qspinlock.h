@@ -85,7 +85,7 @@ void native_pv_lock_init(void) __init;
 #define virt_spin_lock virt_spin_lock
 static inline bool virt_spin_lock(struct qspinlock *lock)
 {
-	if (!static_branch_likely(&virt_spin_lock_key))
+	if (!likely(static_key_enabled(&virt_spin_lock_key)))
 		return false;
 
 	/*

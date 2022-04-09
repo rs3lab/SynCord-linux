@@ -7805,14 +7805,25 @@ static u32 lock_policy_ctx_access(enum bpf_access_type type,
 	int off = 0;
 
 	switch (si->off){
+	case offsetof(struct __lock_policy_args, lock):
+		// only read, deref
+		*insn++ = BPF_LDX_MEM(
+				BPF_SIZEOF(unsigned long),
+				si->dst_reg, si->src_reg, si->off);
 
-#ifdef DEFINE_PER_CPU_DATA
-	case offsetof(struct __lock_policy_args, per_cpu_data):
-		// TODO: Let per-cpu-data as an array, need to modify off.
-
+		*insn++ = BPF_LDX_MEM(
+				BPF_SIZEOF(unsigned long),
+				si->dst_reg, si->dst_reg, off);
+		break;
+	case offsetof(struct __lock_policy_args, lock_ptr):
+		// only read
+		*insn++ = BPF_LDX_MEM(BPF_SIZEOF(unsigned long),
+			si->dst_reg, si->src_reg, si->off);
+		break;
+	default:
+		// additional data. read and write. deref.
 		if (type == BPF_WRITE){
 			// nested store
-
 			int tmp_reg = BPF_REG_9;
 			if (si->src_reg == tmp_reg || si->dst_reg == tmp_reg)
 				--tmp_reg;
@@ -7823,43 +7834,26 @@ static u32 lock_policy_ctx_access(enum bpf_access_type type,
 				offsetof(struct lock_policy_args, tmp_reg));
 
 			*insn++ = BPF_LDX_MEM(
-				BPF_FIELD_SIZEOF(struct lock_policy_args, per_cpu_data),
-				tmp_reg, si->dst_reg,
-				offsetof(struct lock_policy_args, per_cpu_data));
+				BPF_SIZEOF(unsigned long),
+				tmp_reg, si->dst_reg, si->off);
 
 			*insn++ = BPF_STX_MEM(
-				BPF_FIELD_SIZEOF(struct __lock_policy_args, per_cpu_data),
-				tmp_reg, si->src_reg,
-				off);
+				BPF_SIZEOF(unsigned long),
+				tmp_reg, si->src_reg, off);
 
 			*insn++ = BPF_LDX_MEM(BPF_DW, tmp_reg, si->dst_reg,
 				offsetof(struct lock_policy_args, tmp_reg));
-
 		}
 		else{
+			// read deref
 			*insn++ = BPF_LDX_MEM(
-				BPF_FIELD_SIZEOF(struct lock_policy_args, per_cpu_data),
-				si->dst_reg, si->src_reg,
-				offsetof(struct lock_policy_args, per_cpu_data));
+				BPF_SIZEOF(unsigned long),
+				si->dst_reg, si->src_reg, si->off);
 
 			*insn++ = BPF_LDX_MEM(
-				BPF_FIELD_SIZEOF(struct __lock_policy_args, per_cpu_data),
-				si->dst_reg, si->dst_reg,
-				off);
+				BPF_SIZEOF(unsigned long),
+				si->dst_reg, si->dst_reg, off);
 		}
-
-		break;
-#endif
-
-	default:
-		if (type == BPF_WRITE)
-			*insn++ = BPF_STX_MEM(BPF_SIZEOF(unsigned long),
-						  si->dst_reg, si->src_reg,
-						  si->off);
-		else
-			*insn++ = BPF_LDX_MEM(BPF_SIZEOF(unsigned long),
-						  si->dst_reg, si->src_reg,
-						  si->off);
 		break;
 	}
 

@@ -1489,7 +1489,7 @@ static inline void __downgrade_write(struct rw_semaphore *sem)
 /*
  * lock for reading
  */
-void __sched down_read(struct rw_semaphore *sem)
+void down_read(struct rw_semaphore *sem)
 {
 	might_sleep();
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
@@ -1498,7 +1498,7 @@ void __sched down_read(struct rw_semaphore *sem)
 }
 EXPORT_SYMBOL(down_read);
 
-int __sched down_read_killable(struct rw_semaphore *sem)
+int down_read_killable(struct rw_semaphore *sem)
 {
 	might_sleep();
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
@@ -1528,7 +1528,7 @@ EXPORT_SYMBOL(down_read_trylock);
 /*
  * lock for writing
  */
-void __sched down_write(struct rw_semaphore *sem)
+void down_write(struct rw_semaphore *sem)
 {
 	might_sleep();
 	rwsem_acquire(&sem->dep_map, 0, 0, _RET_IP_);
@@ -1539,7 +1539,7 @@ EXPORT_SYMBOL(down_write);
 /*
  * lock for writing
  */
-int __sched down_write_killable(struct rw_semaphore *sem)
+int down_write_killable(struct rw_semaphore *sem)
 {
 	might_sleep();
 	rwsem_acquire(&sem->dep_map, 0, 0, _RET_IP_);
@@ -1632,7 +1632,7 @@ void down_write_nested(struct rw_semaphore *sem, int subclass)
 }
 EXPORT_SYMBOL(down_write_nested);
 
-int __sched down_write_killable_nested(struct rw_semaphore *sem, int subclass)
+int down_write_killable_nested(struct rw_semaphore *sem, int subclass)
 {
 	might_sleep();
 	rwsem_acquire(&sem->dep_map, subclass, 0, _RET_IP_);

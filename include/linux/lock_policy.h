@@ -12,7 +12,18 @@ struct __attribute__((aligned(64))) __aligned_u64_field {
  * User accessible mirror of in-kernel lock_policy_args.
  */
 struct __lock_policy_args {
+	unsigned long lock;
+	unsigned long lock_ptr;
+
 	/* User-defined additional data */
+	unsigned long arg1;
+	unsigned long arg2;
+	unsigned long arg3;
+	unsigned long arg4;
+	unsigned long arg5;
+	unsigned long arg6;
+	unsigned long arg7;
+	unsigned long arg8;
 
 #ifdef DEFINE_PER_CPU_DATA
 	/* type should match with `__aligned_u64_field->field` */
@@ -25,7 +36,18 @@ struct __lock_policy_args {
  * This is the struct to be passed to bpf lock policy
  */
 struct lock_policy_args {
+	unsigned long lock;
+	unsigned long lock_ptr;
+
 	/* User-defined additional data */
+	unsigned long arg1;
+	unsigned long arg2;
+	unsigned long arg3;
+	unsigned long arg4;
+	unsigned long arg5;
+	unsigned long arg6;
+	unsigned long arg7;
+	unsigned long arg8;
 
 #ifdef DEFINE_PER_CPU_DATA
 	struct __aligned_u64_field *per_cpu_data;
