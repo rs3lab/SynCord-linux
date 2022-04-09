@@ -24,7 +24,19 @@
  * all three functions.
  */
 
-BPF_CALL_2(bpf_back_off, u64, lock, u64, timeout)
+bool condition(struct qspinlock *lock, int cond_id){
+	switch(cond_id){
+		case 0:
+			return (atomic_read_acquire(&lock->val) == 0);
+
+			/** patch added here */
+
+		default:
+			return false;
+	}
+}
+
+BPF_CALL_3(bpf_loop_until, u64, lock, u64, timeout, u32, cond_id)
 {
 	unsigned long enter_time = ktime_get_mono_fast_ns();
 	unsigned long counter = 0, time_to_check = 1;
@@ -32,7 +44,7 @@ BPF_CALL_2(bpf_back_off, u64, lock, u64, timeout)
 
 	do {
 		if(++counter == time_to_check) {
-			if(atomic_read_acquire(&l->val) == 0)
+			if(condition(l, cond_id))
 				return 1;
 			time_to_check *= 2;
 		}
@@ -42,13 +54,14 @@ BPF_CALL_2(bpf_back_off, u64, lock, u64, timeout)
 	return 0;
 }
 
-const struct bpf_func_proto bpf_back_off_proto = {
-	.func		= bpf_back_off,
+const struct bpf_func_proto bpf_loop_until_proto= {
+	.func		= bpf_loop_until,
 	.gpl_only	= false,
 	.pkt_access	= true,
 	.ret_type	= RET_INTEGER,
 	.arg1_type	= ARG_ANYTHING,
 	.arg2_type	= ARG_ANYTHING,
+	.arg3_type	= ARG_ANYTHING,
 };
 
 BPF_CALL_2(bpf_map_lookup_elem, struct bpf_map *, map, void *, key)
