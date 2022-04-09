@@ -290,6 +290,29 @@ static __always_inline u32  __pv_wait_head_or_lock(struct qspinlock *lock,
 
 #endif /* _GEN_PV_LOCK_SLOWPATH */
 
+#define MAX_POLICY 5
+void *bpf_prog_lock_to_acquire[MAX_POLICY];
+void *bpf_prog_lock_acquired[MAX_POLICY];
+void *bpf_prog_lock_to_release[MAX_POLICY];
+void *bpf_prog_lock_released[MAX_POLICY];
+
+void *bpf_prog_lock_to_enter_slowpath[MAX_POLICY];
+void *bpf_prog_lock_enable_fastpath[MAX_POLICY];
+
+void *bpf_prog_lock_bypass_acquire[MAX_POLICY];
+void *bpf_prog_lock_bypass_release[MAX_POLICY];
+
+EXPORT_SYMBOL(bpf_prog_lock_to_acquire);
+EXPORT_SYMBOL(bpf_prog_lock_acquired);
+EXPORT_SYMBOL(bpf_prog_lock_to_release);
+EXPORT_SYMBOL(bpf_prog_lock_released);
+
+EXPORT_SYMBOL(bpf_prog_lock_to_enter_slowpath);
+EXPORT_SYMBOL(bpf_prog_lock_enable_fastpath);
+
+EXPORT_SYMBOL(bpf_prog_lock_bypass_acquire);
+EXPORT_SYMBOL(bpf_prog_lock_bypass_release);
+
 // General APIs
 static void syncord_lock_to_acquire(struct qspinlock *lock, int policy_id)
 {
