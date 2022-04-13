@@ -52,7 +52,7 @@ struct lock_policy_args {
  */
 struct per_lock_data {
 	/* User-defined additional data */
-	struct __aligned_u64_field per_cpu_data[224];
+	struct __aligned_u64_field per_cpu_data[NR_CPUS];
 };
 
 /*
