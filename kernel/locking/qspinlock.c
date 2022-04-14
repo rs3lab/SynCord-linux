@@ -277,8 +277,139 @@ static __always_inline void __pv_wait_node(struct mcs_spinlock *node,
 static __always_inline void __pv_kick_node(struct qspinlock *lock,
 					   struct mcs_spinlock *node) { }
 static __always_inline u32  __pv_wait_head_or_lock(struct qspinlock *lock,
-						   struct mcs_spinlock *node)
+						   struct mcs_spinlock *node, int custom, int policy_id)
 						   { return 0; }
+
+#define MAX_POLICY 5
+int num_policy = 0;
+void *bpf_prog_lock_to_acquire[MAX_POLICY];
+void *bpf_prog_lock_acquired[MAX_POLICY];
+void *bpf_prog_lock_to_release[MAX_POLICY];
+void *bpf_prog_lock_released[MAX_POLICY];
+
+void *bpf_prog_lock_to_enter_slowpath[MAX_POLICY];
+void *bpf_prog_lock_enable_fastpath[MAX_POLICY];
+
+void *bpf_prog_lock_bypass_acquire[MAX_POLICY];
+void *bpf_prog_lock_bypass_release[MAX_POLICY];
+
+EXPORT_SYMBOL(num_policy);
+EXPORT_SYMBOL(bpf_prog_lock_to_acquire);
+EXPORT_SYMBOL(bpf_prog_lock_acquired);
+EXPORT_SYMBOL(bpf_prog_lock_to_release);
+EXPORT_SYMBOL(bpf_prog_lock_released);
+
+EXPORT_SYMBOL(bpf_prog_lock_to_enter_slowpath);
+EXPORT_SYMBOL(bpf_prog_lock_enable_fastpath);
+
+EXPORT_SYMBOL(bpf_prog_lock_bypass_acquire);
+EXPORT_SYMBOL(bpf_prog_lock_bypass_release);
+
+// General APIs
+static void syncord_lock_to_acquire(struct qspinlock *lock, int policy_id)
+{
+	return;
+}
+
+static void syncord_lock_acquired(struct qspinlock *lock, int policy_id)
+{
+	return;
+}
+
+static void syncord_lock_to_release(struct qspinlock *lock, int policy_id)
+{
+	return;
+}
+
+static void syncord_lock_released(struct qspinlock *lock, int policy_id)
+{
+	return;
+}
+
+// Fastpath APIs
+static void syncord_to_enter_slowpath(struct qspinlock *lock, struct mcs_spinlock *node, int policy_id)
+{
+	return;
+}
+
+static bool syncord_enable_fastpath(struct qspinlock *lock, int policy_id)
+{
+	return true;
+}
+
+// Lock bypass
+static bool syncord_bypass_acquire(struct qspinlock *lock, int policy_id)
+{
+	return false;
+}
+
+static bool syncord_bypass_release(struct qspinlock *lock, int policy_id)
+{
+	return false;
+}
+
+void bpf_queued_spin_lock(struct qspinlock *lock, int policy_id)
+{
+	u32 val = 0;
+	syncord_lock_to_acquire(lock, policy_id);
+
+	if(unlikely(syncord_bypass_acquire(lock, policy_id))){
+		return;
+	}
+
+	if (likely(syncord_enable_fastpath(lock, policy_id)) &&
+			likely(atomic_try_cmpxchg_acquire(&lock->val, &val, _Q_LOCKED_VAL))){
+		syncord_lock_acquired(lock, policy_id);
+		return;
+	}
+
+	queued_spin_lock_slowpath(lock, val, 1, policy_id);
+	syncord_lock_acquired(lock, policy_id);
+}
+EXPORT_SYMBOL(bpf_queued_spin_lock);
+
+void bpf_queued_spin_unlock(struct qspinlock *lock, int policy_id)
+{
+	syncord_lock_to_release(lock, policy_id);
+
+	if(unlikely(syncord_bypass_release(lock, policy_id))){
+		return;
+	}
+
+	smp_store_release(&lock->locked, 0);
+	syncord_lock_released(lock, policy_id);
+}
+EXPORT_SYMBOL(bpf_queued_spin_unlock);
+
+/**
+ * queued_spin_lock - acquire a queued spinlock
+ * @lock: Pointer to queued spinlock structure
+ */
+void queued_spin_lock(struct qspinlock *lock)
+{
+	u32 val = 0;
+
+	if (likely(atomic_try_cmpxchg_acquire(&lock->val, &val, _Q_LOCKED_VAL)))
+		return;
+
+	queued_spin_lock_slowpath(lock, val, 0, 0);
+}
+EXPORT_SYMBOL(queued_spin_lock);
+
+#ifndef queued_spin_unlock
+/**
+ * queued_spin_unlock - release a queued spinlock
+ * @lock : Pointer to queued spinlock structure
+ */
+void queued_spin_unlock(struct qspinlock *lock)
+{
+	/*
+	 * unlock() needs release semantics:
+	 */
+	smp_store_release(&lock->locked, 0);
+}
+EXPORT_SYMBOL(queued_spin_unlock);
+#endif
 
 #define pv_enabled()		false
 
@@ -342,7 +473,7 @@ static __always_inline void __mcs_lock_handoff(struct mcs_spinlock *node,
  * contended             :    (*,x,y) +--> (*,0,0) ---> (*,0,1) -'  :
  *   queue               :         ^--'                             :
  */
-void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
+void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val, int custom, int policy_id)
 {
 	struct mcs_spinlock *prev, *next, *node;
 	u32 old, tail;
@@ -430,6 +561,10 @@ pv_queue:
 	node = this_cpu_ptr(&qnodes[0].mcs);
 	idx = node->count++;
 	tail = encode_tail(smp_processor_id(), idx);
+
+	if(custom){
+		syncord_to_enter_slowpath(lock, node, policy_id);
+	}
 
 	/*
 	 * 4 nodes are allocated based on the assumption that there will
@@ -535,7 +670,7 @@ pv_queue:
 	 * If PV isn't active, 0 will be returned instead.
 	 *
 	 */
-	if ((val = pv_wait_head_or_lock(lock, node)))
+	if ((val = pv_wait_head_or_lock(lock, node, custom, policy_id)))
 		goto locked;
 
 	val = atomic_cond_read_acquire(&lock->val, !(VAL & _Q_LOCKED_PENDING_MASK));

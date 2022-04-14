@@ -311,7 +311,7 @@ struct arch_spinlock;
 struct qspinlock;
 
 struct pv_lock_ops {
-	void (*queued_spin_lock_slowpath)(struct qspinlock *lock, u32 val);
+	void (*queued_spin_lock_slowpath)(struct qspinlock *lock, u32 val, int custom, int policy_id);
 	struct paravirt_callee_save queued_spin_unlock;
 
 	void (*wait)(u8 *ptr, u8 val);

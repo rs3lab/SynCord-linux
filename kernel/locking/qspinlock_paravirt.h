@@ -400,7 +400,7 @@ static void pv_kick_node(struct qspinlock *lock, struct mcs_spinlock *node)
  * The current value of the lock will be returned for additional processing.
  */
 static u32
-pv_wait_head_or_lock(struct qspinlock *lock, struct mcs_spinlock *node)
+pv_wait_head_or_lock(struct qspinlock *lock, struct mcs_spinlock *node, int custom, int policy_id)
 {
 	struct pv_node *pn = (struct pv_node *)node;
 	struct qspinlock **lp = NULL;

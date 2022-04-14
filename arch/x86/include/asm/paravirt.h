@@ -637,9 +637,9 @@ static inline void __set_fixmap(unsigned /* enum fixed_addresses */ idx,
 #if defined(CONFIG_SMP) && defined(CONFIG_PARAVIRT_SPINLOCKS)
 
 static __always_inline void pv_queued_spin_lock_slowpath(struct qspinlock *lock,
-							u32 val)
+							u32 val, int custom, int policy_id)
 {
-	PVOP_VCALL2(lock.queued_spin_lock_slowpath, lock, val);
+	PVOP_VCALL4(lock.queued_spin_lock_slowpath, lock, val, custom, policy_id);
 }
 
 static __always_inline void pv_queued_spin_unlock(struct qspinlock *lock)

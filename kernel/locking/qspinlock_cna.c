@@ -267,25 +267,48 @@ static void cna_splice_next(struct mcs_spinlock *node,
 	node->locked = ((struct cna_node *)next)->encoded_tail;
 }
 
+#define MAX_POLICY 5
+void *bpf_prog_should_reorder[MAX_POLICY];
+
+EXPORT_SYMBOL(bpf_prog_should_reorder);
+
+// Reordering APIs
+static int syncord_should_reorder(struct mcs_spinlock *node, struct mcs_spinlock *next, int policy_id)
+{
+	return 0;
+}
+
+static int default_cmp_func(struct mcs_spinlock *node, struct mcs_spinlock *next){
+	struct cna_node *cn = (struct cna_node *)node;
+	int numa_node, next_numa_node;
+
+	numa_node = cn->numa_node;
+	next_numa_node = ((struct cna_node *)next)->numa_node;
+
+	return next_numa_node != numa_node && next_numa_node != CNA_PRIORITY_NODE;
+}
+
+
 /*
  * cna_order_queue - check whether the next waiter in the main queue is on
  * the same NUMA node as the lock holder; if not, and it has a waiter behind
  * it in the main queue, move the former onto the secondary queue.
  * Returns 1 if the next waiter runs on the same NUMA node; 0 otherwise.
  */
-static int cna_order_queue(struct mcs_spinlock *node)
+static int cna_order_queue(struct mcs_spinlock *node, int custom, int policy_id)
 {
 	struct mcs_spinlock *next = READ_ONCE(node->next);
-	struct cna_node *cn = (struct cna_node *)node;
-	int numa_node, next_numa_node;
 
 	if (!next)
 		return 0;
 
-	numa_node = cn->numa_node;
-	next_numa_node = ((struct cna_node *)next)->numa_node;
+	int cmp = 0;
+	if(custom)
+		cmp = syncord_should_reorder(node, next, policy_id);
+	else
+		cmp = default_cmp_func(node, next);
 
-	if (next_numa_node != numa_node && next_numa_node != CNA_PRIORITY_NODE) {
+	if (cmp) {
 		struct mcs_spinlock *nnext = READ_ONCE(next->next);
 
 		if (nnext)
@@ -300,7 +323,7 @@ static int cna_order_queue(struct mcs_spinlock *node)
 
 /* Abuse the pv_wait_head_or_lock() hook to get some work done */
 static __always_inline u32 cna_wait_head_or_lock(struct qspinlock *lock,
-						 struct mcs_spinlock *node)
+						 struct mcs_spinlock *node, int custom, int policy_id)
 {
 	struct cna_node *cn = (struct cna_node *)node;
 
@@ -326,7 +349,7 @@ static __always_inline u32 cna_wait_head_or_lock(struct qspinlock *lock,
 		 * Try and put the time otherwise spent spin waiting on
 		 * _Q_LOCKED_PENDING_MASK to use by sorting out lists.
 		 */
-		while (LOCK_IS_BUSY(lock) && !cna_order_queue(node))
+		while (LOCK_IS_BUSY(lock) && !cna_order_queue(node, custom, policy_id))
 			cpu_relax();
 	} else {
 		cn->start_time = FLUSH_SECONDARY_QUEUE;
@@ -401,7 +424,7 @@ static int __init numa_spinlock_setup(char *str)
 }
 __setup("numa_spinlock=", numa_spinlock_setup);
 
-void __cna_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val);
+void __cna_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val, int custom, int policy_id);
 
 /*
  * Switch to the NUMA-friendly slow path for spinlocks when we have

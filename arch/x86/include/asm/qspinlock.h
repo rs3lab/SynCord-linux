@@ -32,9 +32,9 @@ extern void cna_configure_spin_lock_slowpath(void);
 #endif
 
 #ifdef CONFIG_PARAVIRT_SPINLOCKS
-extern void native_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val);
+extern void native_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val, int custom, int policy_id);
 extern void __pv_init_lock_hash(void);
-extern void __pv_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val);
+extern void __pv_queued_spin_lock_slowpath(struct qspinlock *lock, u32 val, int custom, int policy_id);
 extern void __raw_callee_save___pv_queued_spin_unlock(struct qspinlock *lock);
 
 #define	queued_spin_unlock queued_spin_unlock
@@ -49,9 +49,9 @@ static inline void native_queued_spin_unlock(struct qspinlock *lock)
 	smp_store_release(&lock->locked, 0);
 }
 
-static inline void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
+static inline void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val, int custom, int policy_id)
 {
-	pv_queued_spin_lock_slowpath(lock, val);
+	pv_queued_spin_lock_slowpath(lock, val, custom, int policy_id);
 }
 
 static inline void queued_spin_unlock(struct qspinlock *lock)
