@@ -7820,8 +7820,8 @@ static u32 lock_policy_ctx_access(enum bpf_access_type type,
 		*insn++ = BPF_LDX_MEM(BPF_SIZEOF(unsigned long),
 			si->dst_reg, si->src_reg, si->off);
 		break;
-	case offsetof(struct __lock_policy_args, arg5):
-	case offsetof(struct __lock_policy_args, arg6):
+	case offsetof(struct __lock_policy_args, numa_node):
+	case offsetof(struct __lock_policy_args, next_numa_node):
 	case offsetof(struct __lock_policy_args, arg7):
 	case offsetof(struct __lock_policy_args, arg8):
 		// additional data. read and write. no deref.
