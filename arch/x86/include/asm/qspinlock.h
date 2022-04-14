@@ -51,7 +51,7 @@ static inline void native_queued_spin_unlock(struct qspinlock *lock)
 
 static inline void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val, int custom, int policy_id)
 {
-	pv_queued_spin_lock_slowpath(lock, val, custom, int policy_id);
+	pv_queued_spin_lock_slowpath(lock, val, custom, policy_id);
 }
 
 static inline void queued_spin_unlock(struct qspinlock *lock)
