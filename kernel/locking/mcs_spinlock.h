@@ -9,6 +9,12 @@
  * to acquire the lock spinning on a local variable.
  * It avoids expensive cache bouncings that common test-and-set spin-lock
  * implementations incur.
+ *
+ * This implementation of the MCS spin-lock is NUMA-aware. Spinning
+ * threads are organized in two queues, a main queue for threads running
+ * on the same socket as the current lock holder, and a secondary queue
+ * for threads running on other sockets.
+ * For details, see https://arxiv.org/abs/1810.05600.
  */
 #ifndef __LINUX_MCS_SPINLOCK_H
 #define __LINUX_MCS_SPINLOCK_H
@@ -17,8 +23,13 @@
 
 struct mcs_spinlock {
 	struct mcs_spinlock *next;
-	int locked; /* 1 if lock acquired */
-	int count;  /* nesting count, see qspinlock.c */
+	uintptr_t locked; /* 1 if lock acquired, 0 if not, other values */
+					  /* represent a pointer to the secondary queue head */
+	u32 socket_and_count;   /* socket id on which this thread is running */
+							/* with two lower bits reserved for nesting */
+							/* count, see qspinlock.c */
+	struct mcs_spinlock *tail;    /* points to the secondary queue tail */
+	u32 encoded_tail; /* encoding of this node as the main queue tail */
 };
 
 #ifndef arch_mcs_spin_lock_contended
@@ -41,8 +52,8 @@ do {									\
  * operations in the critical section has been completed before
  * unlocking.
  */
-#define arch_mcs_spin_unlock_contended(l)				\
-	smp_store_release((l), 1)
+#define arch_mcs_spin_unlock_contended(l, val)			\
+	smp_store_release((l), (val))
 #endif
 
 /*
@@ -115,7 +126,7 @@ void mcs_spin_unlock(struct mcs_spinlock **lock, struct mcs_spinlock *node)
 	}
 
 	/* Pass lock to next waiter. */
-	arch_mcs_spin_unlock_contended(&next->locked);
+	arch_mcs_spin_unlock_contended(&next->locked, 1);
 }
 
 #endif /* __LINUX_MCS_SPINLOCK_H */

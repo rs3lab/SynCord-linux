@@ -1,6 +1,15 @@
-/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Queued spinlock
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * (C) Copyright 2013-2015 Hewlett-Packard Development Company, L.P.
  *
@@ -99,5 +108,15 @@ typedef struct qspinlock {
 
 #define _Q_LOCKED_VAL		(1U << _Q_LOCKED_OFFSET)
 #define _Q_PENDING_VAL		(1U << _Q_PENDING_OFFSET)
+
+/*
+ * Bitfields in the non-atomic socket_and_count value:
+ * 0- 1: queue node index (always < 4)
+ * 2-31: socket id
+ */
+#define _Q_IDX_OFFSET		0
+#define _Q_IDX_BITS			2
+#define _Q_IDX_MASK			_Q_SET_MASK(IDX)
+#define _Q_SOCKET_OFFSET	(_Q_IDX_OFFSET + _Q_IDX_BITS)
 
 #endif /* __ASM_GENERIC_QSPINLOCK_TYPES_H */
