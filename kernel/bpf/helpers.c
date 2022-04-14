@@ -32,7 +32,7 @@ BPF_CALL_2(bpf_back_off, u64, lock, u64, timeout)
 
 	do {
 		if(++counter == time_to_check) {
-			if(atomic_read_acquire(&l->val) == 0)
+			if(l && atomic_read_acquire(&l->val) == 0)
 				return 1;
 			time_to_check *= 2;
 		}
