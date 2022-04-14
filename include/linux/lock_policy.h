@@ -1,9 +1,6 @@
 #ifndef __LINUX_LOCK_POLICY_H__
 #define __LINUX_LOCK_POLICY_H__
 
-/* Comment out below line if per-cpu data is not needed. */
-#define DEFINE_PER_CPU_DATA
-
 struct __attribute__((aligned(64))) __aligned_u64_field {
 	unsigned long field;
 };
@@ -12,12 +9,19 @@ struct __attribute__((aligned(64))) __aligned_u64_field {
  * User accessible mirror of in-kernel lock_policy_args.
  */
 struct __lock_policy_args {
-	/* User-defined additional data */
-
-#ifdef DEFINE_PER_CPU_DATA
-	/* type should match with `__aligned_u64_field->field` */
+	unsigned long lock;
+	unsigned long lock_ptr;
 	unsigned long per_cpu_data;
-#endif
+
+	/* User-defined additional data */
+	unsigned long arg1;
+	unsigned long arg2;
+	unsigned long arg3;
+	unsigned long arg4;
+	unsigned long arg5;
+	unsigned long arg6;
+	unsigned long arg7;
+	unsigned long arg8;
 };
 
 
@@ -25,12 +29,21 @@ struct __lock_policy_args {
  * This is the struct to be passed to bpf lock policy
  */
 struct lock_policy_args {
-	/* User-defined additional data */
-
-#ifdef DEFINE_PER_CPU_DATA
+	void *lock;
+	unsigned long lock_ptr;
 	struct __aligned_u64_field *per_cpu_data;
+
+	/* User-defined additional data */
+	unsigned long *arg1;
+	unsigned long *arg2;
+	unsigned long *arg3;
+	unsigned long *arg4;
+	unsigned long *arg5;
+	unsigned long *arg6;
+	unsigned long *arg7;
+	unsigned long *arg8;
+
 	unsigned long tmp_reg;
-#endif
 };
 
 /*
@@ -39,10 +52,7 @@ struct lock_policy_args {
  */
 struct per_lock_data {
 	/* User-defined additional data */
-
-#ifdef DEFINE_PER_CPU_DATA
-	struct __aligned_u64_field per_cpu_data[224];
-#endif
+	struct __aligned_u64_field per_cpu_data[NR_CPUS];
 };
 
 /*
