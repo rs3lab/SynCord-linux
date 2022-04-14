@@ -455,6 +455,19 @@ static inline void write_sequnlock(seqlock_t *sl)
 	spin_unlock(&sl->lock);
 }
 
+static inline void bpf_write_seqlock(seqlock_t *sl, int policy_id)
+{
+	bpf_queued_spin_lock(&sl->lock.rlock.raw_lock, policy_id);
+	write_seqcount_begin(&sl->seqcount);
+}
+
+static inline void bpf_write_sequnlock(seqlock_t *sl, int policy_id)
+{
+	write_seqcount_end(&sl->seqcount);
+	bpf_queued_spin_unlock(&sl->lock.rlock.raw_lock, policy_id);
+}
+
+
 static inline void write_seqlock_bh(seqlock_t *sl)
 {
 	spin_lock_bh(&sl->lock);

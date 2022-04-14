@@ -29,6 +29,7 @@ struct mcs_spinlock {
 
 	int nid;
 	int cid;
+	void *bpf_args;
 	struct mcs_spinlock *last_visited;
 };
 

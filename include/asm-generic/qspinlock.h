@@ -65,34 +65,13 @@ static __always_inline int queued_spin_trylock(struct qspinlock *lock)
 	return likely(atomic_try_cmpxchg_acquire(&lock->val, &val, _Q_LOCKED_VAL));
 }
 
-extern void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val);
-
-/**
- * queued_spin_lock - acquire a queued spinlock
- * @lock: Pointer to queued spinlock structure
- */
-static __always_inline void queued_spin_lock(struct qspinlock *lock)
-{
-	u32 val = 0;
-
-	if (likely(atomic_try_cmpxchg_acquire(&lock->val, &val, _Q_LOCKED_VAL)))
-		return;
-
-	queued_spin_lock_slowpath(lock, val);
-}
+extern void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val, int custom, int policy_id);
+extern void bpf_queued_spin_lock(struct qspinlock *lock, int policy_id);
+extern void bpf_queued_spin_unlock(struct qspinlock *lock, int policy_id);
+extern void queued_spin_lock(struct qspinlock *lock);
 
 #ifndef queued_spin_unlock
-/**
- * queued_spin_unlock - release a queued spinlock
- * @lock : Pointer to queued spinlock structure
- */
-static __always_inline void queued_spin_unlock(struct qspinlock *lock)
-{
-	/*
-	 * unlock() needs release semantics:
-	 */
-	smp_store_release(&lock->locked, 0);
-}
+extern void queued_spin_unlock(struct qspinlock *lock);
 #endif
 
 #ifndef virt_spin_lock

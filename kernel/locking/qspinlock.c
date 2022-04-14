@@ -170,6 +170,94 @@ static bool probably(void)
 	return true;
 }
 
+#define MAX_POLICY 5
+int num_policy = 0;
+void *bpf_prog_lock_to_acquire[MAX_POLICY];
+void *bpf_prog_lock_acquired[MAX_POLICY];
+void *bpf_prog_lock_to_release[MAX_POLICY];
+void *bpf_prog_lock_released[MAX_POLICY];
+
+void *bpf_prog_lock_to_enter_slowpath[MAX_POLICY];
+void *bpf_prog_lock_enable_fastpath[MAX_POLICY];
+
+void *bpf_prog_should_reorder[MAX_POLICY];
+void *bpf_prog_skip_reorder[MAX_POLICY];
+
+void *bpf_prog_lock_bypass_acquire[MAX_POLICY];
+void *bpf_prog_lock_bypass_release[MAX_POLICY];
+
+EXPORT_SYMBOL(num_policy);
+EXPORT_SYMBOL(bpf_prog_lock_to_acquire);
+EXPORT_SYMBOL(bpf_prog_lock_acquired);
+EXPORT_SYMBOL(bpf_prog_lock_to_release);
+EXPORT_SYMBOL(bpf_prog_lock_released);
+
+EXPORT_SYMBOL(bpf_prog_lock_to_enter_slowpath);
+EXPORT_SYMBOL(bpf_prog_lock_enable_fastpath);
+
+EXPORT_SYMBOL(bpf_prog_should_reorder);
+EXPORT_SYMBOL(bpf_prog_skip_reorder);
+
+EXPORT_SYMBOL(bpf_prog_lock_bypass_acquire);
+EXPORT_SYMBOL(bpf_prog_lock_bypass_release);
+
+// General APIs
+static void syncord_lock_to_acquire(struct qspinlock *lock, int policy_id)
+{
+	return;
+}
+
+static void syncord_lock_acquired(struct qspinlock *lock, int policy_id)
+{
+	return;
+}
+
+static void syncord_lock_to_release(struct qspinlock *lock, int policy_id)
+{
+	return;
+}
+
+static void syncord_lock_released(struct qspinlock *lock, int policy_id)
+{
+	return;
+}
+
+// Fastpath APIs
+static void syncord_to_enter_slowpath(struct qspinlock *lock, struct mcs_spinlock *node, int policy_id)
+{
+	return;
+}
+
+static bool syncord_enable_fastpath(struct qspinlock *lock, int policy_id)
+{
+	return true;
+}
+
+// Reordering APIs
+static int syncord_should_reorder(struct qspinlock *lock, struct mcs_spinlock *node, struct mcs_spinlock *curr, int policy_id)
+{
+	return 0;
+}
+
+static int default_cmp_func(struct qspinlock *lock, struct mcs_spinlock *node, struct mcs_spinlock *curr){
+	return (node->nid == curr->nid);
+}
+
+static int syncord_skip_reorder(struct qspinlock *lock, struct mcs_spinlock *node){
+	return 0;
+}
+
+// Lock bypass
+static bool syncord_bypass_acquire(struct qspinlock *lock, int policy_id)
+{
+	return false;
+}
+
+static bool syncord_bypass_release(struct qspinlock *lock, int policy_id)
+{
+	return false;
+}
+
 
 /*
  * This function is responsible for aggregating waiters in a
@@ -184,12 +272,13 @@ static bool probably(void)
  * of sockets.
  */
 static void shuffle_waiters(struct qspinlock *lock, struct mcs_spinlock *node,
-			    int is_next_waiter)
+			    int is_next_waiter, int custom, int policy_id)
 {
 	struct mcs_spinlock *curr, *prev, *next, *last, *sleader, *qend;
 	int nid;
 	int curr_locked_count;
 	int one_shuffle = false;
+	int cmp = 0;
 
 	prev = smp_load_acquire(&node->last_visited);
 	if (!prev)
@@ -295,16 +384,19 @@ static void shuffle_waiters(struct qspinlock *lock, struct mcs_spinlock *node,
 		}
 
 		/* got the current for sure */
-
+		if(custom)
+			cmp = syncord_should_reorder(lock, node, curr, policy_id);
+		else
+			cmp = default_cmp_func(lock, node, curr);
 		/* Check if curr->nid is same as nid */
-		if (curr->nid == nid) {
+		if (cmp) {
 
 			/*
 			 * if prev->nid == curr->nid, then
 			 * just update the last and prev
 			 * and proceed forward
 			 */
-			if (prev->nid == nid) {
+			if (prev == last) {
 				set_waitcount(curr, curr_locked_count);
 
 				last = curr;
@@ -595,7 +687,7 @@ static __always_inline u32  __pv_wait_head_or_lock(struct qspinlock *lock,
  * contended             :    (*,x,y) +--> (*,0,0) ---> (*,0,1) -'  :
  *   queue               :         ^--'                             :
  */
-void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val)
+void queued_spin_lock_slowpath(struct qspinlock *lock, u32 val, int custom, int policy_id)
 {
 	struct mcs_spinlock *prev, *next, *node;
 	u32 old, tail;
@@ -721,8 +813,12 @@ pv_queue:
 	node->last_visited = NULL;
 	node->locked = 0;
 	node->next = NULL;
+	node->bpf_args = NULL;
 	pv_init_node(node);
 
+	if(custom){
+		syncord_to_enter_slowpath(lock, node, policy_id);
+	}
 	/*
 	 * We touched a (possibly) cold cacheline in the per-cpu queue node;
 	 * attempt the trylock once more in the hope someone let go while we
@@ -767,7 +863,7 @@ pv_queue:
 				break;
 
 			if (READ_ONCE(node->sleader))
-				shuffle_waiters(lock, node, false);
+				shuffle_waiters(lock, node, false, custom, policy_id);
 
 			cpu_relax();
 		}
@@ -819,7 +915,7 @@ pv_queue:
 		wcount = READ_ONCE(node->wcount);
 		if (!wcount ||
 		    (wcount && node->sleader))
-			shuffle_waiters(lock, node, true);
+			shuffle_waiters(lock, node, true, custom, policy_id);
 		cpu_relax();
 	}
 	smp_acquire__after_ctrl_dep();
@@ -876,6 +972,68 @@ release:
 	__this_cpu_dec(qnodes[0].mcs.count);
 }
 EXPORT_SYMBOL(queued_spin_lock_slowpath);
+
+
+void bpf_queued_spin_lock(struct qspinlock *lock, int policy_id)
+{
+	u32 val = 0;
+	syncord_lock_to_acquire(lock, policy_id);
+
+	if(unlikely(syncord_bypass_acquire(lock, policy_id))){
+		return;
+	}
+
+	if (likely(syncord_enable_fastpath(lock, policy_id)) &&
+			likely(atomic_try_cmpxchg_acquire(&lock->val, &val, _Q_LOCKED_VAL))){
+		syncord_lock_acquired(lock, policy_id);
+		return;
+	}
+
+	queued_spin_lock_slowpath(lock, val, 1, policy_id);
+	syncord_lock_acquired(lock, policy_id);
+}
+EXPORT_SYMBOL(bpf_queued_spin_lock);
+
+void bpf_queued_spin_unlock(struct qspinlock *lock, int policy_id)
+{
+	syncord_lock_to_release(lock, policy_id);
+
+	if(unlikely(syncord_bypass_release(lock, policy_id))){
+		return;
+	}
+
+	smp_store_release(&lock->locked, 0);
+	syncord_lock_released(lock, policy_id);
+}
+EXPORT_SYMBOL(bpf_queued_spin_unlock);
+
+/**
+ * queued_spin_lock - acquire a queued spinlock
+ * @lock: Pointer to queued spinlock structure
+ */
+void queued_spin_lock(struct qspinlock *lock)
+{
+	u32 val = 0;
+
+	if (likely(atomic_try_cmpxchg_acquire(&lock->val, &val, _Q_LOCKED_VAL)))
+		return;
+
+	queued_spin_lock_slowpath(lock, val, 0, 0);
+}
+EXPORT_SYMBOL(queued_spin_lock);
+
+/**
+ * queued_spin_unlock - release a queued spinlock
+ * @lock : Pointer to queued spinlock structure
+ */
+void queued_spin_unlock(struct qspinlock *lock)
+{
+	/*
+	 * unlock() needs release semantics:
+	 */
+	smp_store_release(&lock->locked, 0);
+}
+EXPORT_SYMBOL(queued_spin_unlock);
 
 /*
  * Generate the paravirt code for queued_spin_unlock_slowpath().
