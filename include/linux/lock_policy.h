@@ -38,10 +38,10 @@ struct lock_policy_args {
 	unsigned long *arg2;
 	unsigned long *arg3;
 	unsigned long *arg4;
-	unsigned long *arg5;
-	unsigned long *arg6;
-	unsigned long *arg7;
-	unsigned long *arg8;
+	unsigned long arg5;
+	unsigned long arg6;
+	unsigned long arg7;
+	unsigned long arg8;
 
 	unsigned long tmp_reg;
 };
