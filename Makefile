@@ -2,7 +2,7 @@
 VERSION = 5
 PATCHLEVEL = 4
 SUBLEVEL = 0
-EXTRAVERSION = -shfllock
+EXTRAVERSION = -shfllock-syncord
 NAME = Kleptomaniac Octopus
 
 # *DOCUMENTATION*
