@@ -1001,6 +1001,9 @@ asmlinkage long sys_pidfd_send_signal(int pidfd, int sig,
 				       siginfo_t __user *info,
 				       unsigned int flags);
 
+asmlinkage long sys_rename2(const char __user *oldname,
+		const char __user *newname, uint64_t __user *hold_time);
+
 /*
  * Architecture-specific system calls
  */
