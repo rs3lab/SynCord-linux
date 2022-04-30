@@ -236,7 +236,7 @@ static bool syncord_enable_fastpath(struct qspinlock *lock, int policy_id)
 // Reordering APIs
 static int syncord_should_reorder(struct qspinlock *lock, struct mcs_spinlock *node, struct mcs_spinlock *curr, int policy_id)
 {
-	return 0;
+	return (node->nid == curr->nid);
 }
 
 static int default_cmp_func(struct qspinlock *lock, struct mcs_spinlock *node, struct mcs_spinlock *curr){
