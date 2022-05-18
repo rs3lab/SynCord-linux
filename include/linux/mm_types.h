@@ -367,6 +367,7 @@ struct core_state {
 };
 
 struct kioctx_table;
+struct rw_semaphore;
 struct mm_struct {
 	struct {
 		struct vm_area_struct *mmap;		/* list of VMAs */

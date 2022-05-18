@@ -27,9 +27,38 @@
 #include <linux/export.h>
 #include <linux/rwsem.h>
 #include <linux/atomic.h>
+#include <linux/mm_types.h>
+#include <linux/error-injection.h>
+
+#include <linux/printk.h>
+#include <linux/filter.h>
 
 #include "rwsem.h"
 #include "lock_events.h"
+
+#define TABLE_SIZE             4096
+#define rd_id(v)       ((v))
+#define N                  9
+#define CHECK_FOR_BIAS     16
+#define V(i)               ((uint64_t)visible_readers[rd_id(i)])
+
+static volatile struct rw_semaphore *
+visible_readers[rd_id(TABLE_SIZE)] __attribute__((aligned(PAGE_SIZE))) = { NULL };
+
+static DEFINE_PER_CPU(u32, check_bias);
+
+static inline uint32_t mix32a(uint32_t v)
+{
+    static const int32_t mix32ka = 0x9abe94e3 ;
+    v = (v ^ (v >> 16)) * mix32ka ;
+    v = (v ^ (v >> 16)) * mix32ka ;
+    return v;
+}
+
+static inline uint32_t hash(uint64_t addr) {
+    return mix32a((uint64_t)current ^ addr) % TABLE_SIZE;
+}
+
 
 /*
  * The least significant 3 bits of the owner value has the following
@@ -341,6 +370,9 @@ void __init_rwsem(struct rw_semaphore *sem, const char *name,
 #ifdef CONFIG_RWSEM_SPIN_ON_OWNER
 	osq_lock_init(&sem->osq);
 #endif
+
+	sem->rbias = 0;
+	sem->inhibit_until = 0;
 }
 EXPORT_SYMBOL(__init_rwsem);
 
@@ -1494,7 +1526,31 @@ void __sched down_read(struct rw_semaphore *sem)
 	might_sleep();
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
 
+	preempt_disable();
+	if (READ_ONCE(sem->rbias)) {
+		volatile struct rw_semaphore **slot = NULL;
+		int id = hash((uint64_t)sem);
+		slot = &visible_readers[rd_id(id)];
+		if (cmpxchg(slot, NULL, sem) == NULL) {
+			if (READ_ONCE(sem->rbias)) {
+				preempt_enable();
+				goto out;
+			}
+			(void)xchg(slot, NULL);
+		}
+	}
+	preempt_enable();
+
 	LOCK_CONTENDED(sem, __down_read_trylock, __down_read);
+
+	// set_rbias
+	if (((this_cpu_inc_return(check_bias) % CHECK_FOR_BIAS) == 0) &&
+			(!READ_ONCE(sem->rbias) && rdtsc() >= sem->inhibit_until)) {
+		WRITE_ONCE(sem->rbias, 1);
+	}
+
+out:
+	rwsem_set_reader_owned(sem);
 }
 EXPORT_SYMBOL(down_read);
 
@@ -1503,11 +1559,34 @@ int __sched down_read_killable(struct rw_semaphore *sem)
 	might_sleep();
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
 
+	preempt_disable();
+	if (READ_ONCE(sem->rbias)) {
+		volatile struct rw_semaphore **slot = NULL;
+		int id = hash((uint64_t)sem);
+		slot = &visible_readers[rd_id(id)];
+		if (cmpxchg(slot, NULL, sem) == NULL) {
+			if (READ_ONCE(sem->rbias)) {
+				preempt_enable();
+				goto out;
+			}
+			(void)xchg(slot, NULL);
+		}
+	}
+	preempt_enable();
+
 	if (LOCK_CONTENDED_RETURN(sem, __down_read_trylock, __down_read_killable)) {
 		rwsem_release(&sem->dep_map, 1, _RET_IP_);
 		return -EINTR;
 	}
 
+	// set_rbias
+	if (((this_cpu_inc_return(check_bias) % CHECK_FOR_BIAS) == 0) &&
+			(!READ_ONCE(sem->rbias) && rdtsc() >= sem->inhibit_until)) {
+		WRITE_ONCE(sem->rbias, 1);
+	}
+
+out:
+	rwsem_set_reader_owned(sem);
 	return 0;
 }
 EXPORT_SYMBOL(down_read_killable);
@@ -1533,6 +1612,39 @@ void __sched down_write(struct rw_semaphore *sem)
 	might_sleep();
 	rwsem_acquire(&sem->dep_map, 0, 0, _RET_IP_);
 	LOCK_CONTENDED(sem, __down_write_trylock, __down_write);
+	
+	preempt_disable();
+	if (READ_ONCE(sem->rbias)) {
+		int i, j;
+		unsigned long start, now;
+
+		smp_mb();
+		WRITE_ONCE(sem->rbias, 0);
+
+		start = rdtsc();
+		for (i = 0; i < TABLE_SIZE; i+=8) {
+			if (((V(i) | V(i+1) | V(i+2) | V(i+3) |
+							V(i+4) | V(i+5) | V(i+6) | V(i+7)) != 0)) {
+				for (j = 0; j < 8; j++) {
+					while (V(i+j) == (uint64_t)sem) {
+						cpu_relax();
+
+						if (need_resched())
+							schedule_preempt_disabled();
+					}
+				}
+			}
+			if (need_resched())
+				schedule_preempt_disabled();
+			cpu_relax();
+		}
+		now = rdtsc();
+		/* sem->inhibit_until = now + ((now - start) * N); */
+		sem->inhibit_until = 0;
+	}
+	preempt_disable();
+
+	rwsem_set_owner(sem);
 }
 EXPORT_SYMBOL(down_write);
 
@@ -1550,6 +1662,38 @@ int __sched down_write_killable(struct rw_semaphore *sem)
 		return -EINTR;
 	}
 
+	preempt_disable();
+	if (READ_ONCE(sem->rbias)) {
+		int i, j;
+		unsigned long start, now;
+
+		smp_mb();
+		WRITE_ONCE(sem->rbias, 0);
+
+		start = rdtsc();
+		for (i = 0; i < TABLE_SIZE; i+=8) {
+			if (((V(i) | V(i+1) | V(i+2) | V(i+3) |
+							V(i+4) | V(i+5) | V(i+6) | V(i+7)) != 0)) {
+				for (j = 0; j < 8; j++) {
+					while (V(i+j) == (uint64_t)sem) {
+						cpu_relax();
+
+						if (need_resched())
+							schedule_preempt_disabled();
+					}
+				}
+			}
+			if (need_resched())
+				schedule_preempt_disabled();
+			cpu_relax();
+		}
+		now = rdtsc();
+		/* sem->inhibit_until = now + ((now - start) * N); */
+		sem->inhibit_until = 0;
+	}
+	preempt_disable();
+
+	rwsem_set_owner(sem);
 	return 0;
 }
 EXPORT_SYMBOL(down_write_killable);
@@ -1574,6 +1718,17 @@ EXPORT_SYMBOL(down_write_trylock);
 void up_read(struct rw_semaphore *sem)
 {
 	rwsem_release(&sem->dep_map, 1, _RET_IP_);
+    DEBUG_RWSEMS_WARN_ON(sem->owner != RWSEM_READER_OWNED, sem);
+
+	preempt_disable();
+	/* if (READ_ONCE(visible_readers[hash((uint64_t)sem)]) == sem) { */
+	if (cmpxchg(&visible_readers[hash((uint64_t)sem)], sem, NULL) == sem) {
+		/* visible_readers[hash((uint64_t)sem)] = NULL; */
+		preempt_enable();
+		return;
+	}
+	preempt_enable();
+
 	__up_read(sem);
 }
 EXPORT_SYMBOL(up_read);
@@ -1593,8 +1748,15 @@ EXPORT_SYMBOL(up_write);
  */
 void downgrade_write(struct rw_semaphore *sem)
 {
+#if 0
 	lock_downgrade(&sem->dep_map, _RET_IP_);
+	DEBUG_RWSEMS_WARN_ON(sem->owner != current, sem);
+
+	rwsem_set_reader_owned(sem);
 	__downgrade_write(sem);
+#endif
+	up_write(sem);
+	down_read(sem);
 }
 EXPORT_SYMBOL(downgrade_write);
 

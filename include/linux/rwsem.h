@@ -33,6 +33,8 @@
  * cacheline bouncing problem.
  */
 struct rw_semaphore {
+	volatile int rbias;
+	volatile u64 inhibit_until;
 	atomic_long_t count;
 	/*
 	 * Write owner or one of the read owners as well flags regarding
@@ -90,7 +92,8 @@ static inline int rwsem_is_locked(struct rw_semaphore *sem)
 
 #define __RWSEM_INITIALIZER(name)				\
 	{ __RWSEM_INIT_COUNT(name),				\
-	  .owner = ATOMIC_LONG_INIT(0),				\
+	  .rbias = 0,				\
+	  .inhibit_until = 0,						\
 	  .wait_list = LIST_HEAD_INIT((name).wait_list),	\
 	  .wait_lock = __RAW_SPIN_LOCK_UNLOCKED(name.wait_lock)	\
 	  __RWSEM_OPT_INIT(name)				\
