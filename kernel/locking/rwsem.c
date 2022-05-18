@@ -1493,12 +1493,12 @@ int bypass_acquire(struct rw_semaphore *sem) {
 
 	preempt_disable();
 	if(READ_ONCE(sem->rbias)) {
-		if(cmpxchg(&sem->visible_readers[cpu], 0, 1) == 0) {
+		if(cmpxchg(&sem->visible_readers[cpu].field, 0, 1) == 0) {
 			if(READ_ONCE(sem->rbias)) {
 				preempt_enable();
 				return 1;
 			}
-			(void)xchg(&sem->visible_readers[cpu], 0);
+			(void)xchg(&sem->visible_readers[cpu].field, 0);
 		}
 	}
 	preempt_enable();
@@ -1508,7 +1508,7 @@ int bypass_acquire(struct rw_semaphore *sem) {
 int bypass_release(struct rw_semaphore *sem) {
 	unsigned int cpu = smp_processor_id();
 	preempt_disable();
-	if(cmpxchg(&sem->visible_readers[cpu], 1, 0) == 1){
+	if(cmpxchg(&sem->visible_readers[cpu].field, 1, 0) == 1){
 		preempt_enable();
 		return 1;
 	}
@@ -1523,7 +1523,7 @@ void check_visible_readers(struct rw_semaphore *sem) {
 
 		int i;
 		for(i=0; i<224; i++){
-			while(READ_ONCE(sem->visible_readers[i])){
+			while(READ_ONCE(sem->visible_readers[i].field)){
 				cpu_relax();
 				if(need_resched())
 					schedule_preempt_disabled();

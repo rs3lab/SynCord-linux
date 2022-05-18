@@ -20,6 +20,10 @@
 #include <linux/osq_lock.h>
 #endif
 
+struct __attribute__((aligned(64))) __aligned_u64_int {
+	int field;
+};
+
 /*
  * For an uncontended rwsem, count and owner are the only fields a task
  * needs to touch when acquiring the rwsem. So they are put next to each
@@ -52,8 +56,7 @@ struct rw_semaphore {
 	struct lockdep_map	dep_map;
 #endif
 	int rbias;
-	/* struct __aligned_u64_int visible_readers[NR_CPUS]; */
-	int visible_readers[224];
+	struct __aligned_u64_int visible_readers[224];
 };
 
 /*
