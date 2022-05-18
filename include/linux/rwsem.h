@@ -51,6 +51,9 @@ struct rw_semaphore {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map	dep_map;
 #endif
+	int rbias;
+	/* struct __aligned_u64_int visible_readers[NR_CPUS]; */
+	int visible_readers[224];
 };
 
 /*
@@ -90,6 +93,8 @@ static inline int rwsem_is_locked(struct rw_semaphore *sem)
 
 #define __RWSEM_INITIALIZER(name)				\
 	{ __RWSEM_INIT_COUNT(name),				\
+	  .rbias = 0, \
+	  .visible_readers = {0}, \
 	  .owner = ATOMIC_LONG_INIT(0),				\
 	  .wait_list = LIST_HEAD_INIT((name).wait_list),	\
 	  .wait_lock = __RAW_SPIN_LOCK_UNLOCKED(name.wait_lock)	\

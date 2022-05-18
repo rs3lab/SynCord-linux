@@ -341,6 +341,8 @@ void __init_rwsem(struct rw_semaphore *sem, const char *name,
 #ifdef CONFIG_RWSEM_SPIN_ON_OWNER
 	osq_lock_init(&sem->osq);
 #endif
+	sem->rbias = 0;
+	memset(sem->visible_readers, 0, sizeof(sem->visible_readers));
 }
 EXPORT_SYMBOL(__init_rwsem);
 
@@ -1486,6 +1488,54 @@ static inline void __downgrade_write(struct rw_semaphore *sem)
 		rwsem_downgrade_wake(sem);
 }
 
+int bypass_acquire(struct rw_semaphore *sem) {
+	unsigned int cpu = smp_processor_id();
+
+	preempt_disable();
+	if(READ_ONCE(sem->rbias)) {
+		if(cmpxchg(&sem->visible_readers[cpu], 0, 1) == 0) {
+			if(READ_ONCE(sem->rbias)) {
+				preempt_enable();
+				return 1;
+			}
+			(void)xchg(&sem->visible_readers[cpu], 0);
+		}
+	}
+	preempt_enable();
+	return 0;
+}
+
+int bypass_release(struct rw_semaphore *sem) {
+	unsigned int cpu = smp_processor_id();
+	preempt_disable();
+	if(cmpxchg(&sem->visible_readers[cpu], 1, 0) == 1){
+		preempt_enable();
+		return 1;
+	}
+	preempt_enable();
+	return 0;
+}
+
+void check_visible_readers(struct rw_semaphore *sem) {
+	preempt_disable();
+	if(READ_ONCE(sem->rbias)) {
+		WRITE_ONCE(sem->rbias, 0);
+
+		int i;
+		for(i=0; i<224; i++){
+			while(READ_ONCE(sem->visible_readers[i])){
+				cpu_relax();
+				if(need_resched())
+					schedule_preempt_disabled();
+			}
+			if(need_resched())
+				schedule_preempt_disabled();
+			cpu_relax();
+		}
+	}
+	preempt_enable();
+}
+
 /*
  * lock for reading
  */
@@ -1494,7 +1544,13 @@ void __sched down_read(struct rw_semaphore *sem)
 	might_sleep();
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
 
+	if(bypass_acquire(sem))
+		return;
+
 	LOCK_CONTENDED(sem, __down_read_trylock, __down_read);
+
+	if(!READ_ONCE(sem->rbias))
+		WRITE_ONCE(sem->rbias, 1);
 }
 EXPORT_SYMBOL(down_read);
 
@@ -1502,11 +1558,16 @@ int __sched down_read_killable(struct rw_semaphore *sem)
 {
 	might_sleep();
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
+	if(bypass_acquire(sem))
+		return 0;
 
 	if (LOCK_CONTENDED_RETURN(sem, __down_read_trylock, __down_read_killable)) {
 		rwsem_release(&sem->dep_map, 1, _RET_IP_);
 		return -EINTR;
 	}
+
+	if(!READ_ONCE(sem->rbias))
+		WRITE_ONCE(sem->rbias, 1);
 
 	return 0;
 }
@@ -1517,10 +1578,16 @@ EXPORT_SYMBOL(down_read_killable);
  */
 int down_read_trylock(struct rw_semaphore *sem)
 {
+	if(bypass_acquire(sem))
+		return 1;
+
 	int ret = __down_read_trylock(sem);
 
-	if (ret == 1)
+	if (ret == 1){
 		rwsem_acquire_read(&sem->dep_map, 0, 1, _RET_IP_);
+		if(!READ_ONCE(sem->rbias))
+			WRITE_ONCE(sem->rbias, 1);
+	}
 	return ret;
 }
 EXPORT_SYMBOL(down_read_trylock);
@@ -1533,6 +1600,7 @@ void __sched down_write(struct rw_semaphore *sem)
 	might_sleep();
 	rwsem_acquire(&sem->dep_map, 0, 0, _RET_IP_);
 	LOCK_CONTENDED(sem, __down_write_trylock, __down_write);
+	check_visible_readers(sem);
 }
 EXPORT_SYMBOL(down_write);
 
@@ -1550,6 +1618,7 @@ int __sched down_write_killable(struct rw_semaphore *sem)
 		return -EINTR;
 	}
 
+	check_visible_readers(sem);
 	return 0;
 }
 EXPORT_SYMBOL(down_write_killable);
@@ -1561,8 +1630,10 @@ int down_write_trylock(struct rw_semaphore *sem)
 {
 	int ret = __down_write_trylock(sem);
 
-	if (ret == 1)
+	if (ret == 1){
+		check_visible_readers(sem);
 		rwsem_acquire(&sem->dep_map, 0, 1, _RET_IP_);
+	}
 
 	return ret;
 }
@@ -1573,6 +1644,8 @@ EXPORT_SYMBOL(down_write_trylock);
  */
 void up_read(struct rw_semaphore *sem)
 {
+	if(bypass_release(sem))
+		return;
 	rwsem_release(&sem->dep_map, 1, _RET_IP_);
 	__up_read(sem);
 }
@@ -1593,8 +1666,10 @@ EXPORT_SYMBOL(up_write);
  */
 void downgrade_write(struct rw_semaphore *sem)
 {
-	lock_downgrade(&sem->dep_map, _RET_IP_);
-	__downgrade_write(sem);
+	/* lock_downgrade(&sem->dep_map, _RET_IP_); */
+	/* __downgrade_write(sem); */
+	up_write(sem);
+	down_read(sem);
 }
 EXPORT_SYMBOL(downgrade_write);
 
@@ -1603,8 +1678,15 @@ EXPORT_SYMBOL(downgrade_write);
 void down_read_nested(struct rw_semaphore *sem, int subclass)
 {
 	might_sleep();
+
+	if(bypass_acquire(sem))
+		return;
+
 	rwsem_acquire_read(&sem->dep_map, subclass, 0, _RET_IP_);
 	LOCK_CONTENDED(sem, __down_read_trylock, __down_read);
+
+	if(!READ_ONCE(sem->rbias))
+		WRITE_ONCE(sem->rbias, 1);
 }
 EXPORT_SYMBOL(down_read_nested);
 
@@ -1613,14 +1695,20 @@ void _down_write_nest_lock(struct rw_semaphore *sem, struct lockdep_map *nest)
 	might_sleep();
 	rwsem_acquire_nest(&sem->dep_map, 0, 0, nest, _RET_IP_);
 	LOCK_CONTENDED(sem, __down_write_trylock, __down_write);
+	check_visible_readers(sem);
 }
 EXPORT_SYMBOL(_down_write_nest_lock);
 
 void down_read_non_owner(struct rw_semaphore *sem)
 {
 	might_sleep();
+	if(bypass_acquire(sem))
+		return;
+
 	__down_read(sem);
 	__rwsem_set_reader_owned(sem, NULL);
+	if(!READ_ONCE(sem->rbias))
+		WRITE_ONCE(sem->rbias, 1);
 }
 EXPORT_SYMBOL(down_read_non_owner);
 
@@ -1629,6 +1717,7 @@ void down_write_nested(struct rw_semaphore *sem, int subclass)
 	might_sleep();
 	rwsem_acquire(&sem->dep_map, subclass, 0, _RET_IP_);
 	LOCK_CONTENDED(sem, __down_write_trylock, __down_write);
+	check_visible_readers(sem);
 }
 EXPORT_SYMBOL(down_write_nested);
 
@@ -1642,13 +1731,16 @@ int __sched down_write_killable_nested(struct rw_semaphore *sem, int subclass)
 		rwsem_release(&sem->dep_map, 1, _RET_IP_);
 		return -EINTR;
 	}
-
+	check_visible_readers(sem);
 	return 0;
 }
 EXPORT_SYMBOL(down_write_killable_nested);
 
 void up_read_non_owner(struct rw_semaphore *sem)
 {
+	if(bypass_release(sem))
+		return;
+
 	DEBUG_RWSEMS_WARN_ON(!is_rwsem_reader_owned(sem), sem);
 	__up_read(sem);
 }
